@@ -6,7 +6,6 @@ output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(tidycensus)
 library(sf)
@@ -17,7 +16,6 @@ library(rgdal)
 library(ggplot2)
 library(rgeos)
 library(raster)
-library(tidycensus)
 library(pander)
 
 options(tigris_use_cache = TRUE)
@@ -102,13 +100,6 @@ density_quantiles = quantile(as.numeric(census_tracts$density), na.rm = T)
 ```
 
 ```{r}
-cents_utm = spTransform(cents, CRS("+proj=utm"))
-spDists(cents_utm, cents_utm[1])
-```
-
-
-
-```{r}
 #import polling places shapefile and convert to lat long sf
 polling_places <- readOGR("./South_Carolina_2018")
 polling_places = spTransform(polling_places, CRS("+proj=longlat"))
@@ -129,7 +120,7 @@ min(dists)
 census_tracts$nearest_polling_place = 1
 census_tracts$five_nearest_polling_places = 1
 
-#
+# calculate the distances of nearest and (averaged) five nearest polling places
 for (i in c(1:nrow(census_tracts))) {
   #find distances
   dists = st_distance(census_tracts$centroid[i], polling_places$geometry)
@@ -144,6 +135,7 @@ for (i in c(1:nrow(census_tracts))) {
 
 
 ```{r}
+#map and color by distance to nearest
 census_tracts %>%
   ggplot(aes(fill = nearest_polling_place)) +
   geom_sf(color = NA) +
@@ -152,16 +144,16 @@ census_tracts %>%
 ```
 
 ```{r}
+#calculate black population percentage
 census_tracts_percentage = na.omit(
   census_tracts %>% 
   mutate(percent_black = value/summary_value)
   )
 
-cor(census_tracts_percentage$percent_black, census_tracts_percentage$nearest_polling_place)
-cor(census_tracts_percentage$percent_black, census_tracts_percentage$five_nearest_polling_places)
-
+#get density quantiles
 density_quantiles = quantile(as.numeric(census_tracts_percentage$density))
 
+#split the data into the quantiles and display correlation with black population.
 for (i in 1:4) {
   quantile = census_tracts_percentage %>% 
     filter(as.numeric(density) >= as.numeric(density_quantiles[i]), as.numeric(density) <= as.numeric(density_quantiles[i+1]))
@@ -171,6 +163,7 @@ for (i in 1:4) {
 
 
 ```{r}
+#simple t test to see if there is any meaningful difference between majority non-black and majority black areas
 t.test(census_tracts_percentage$nearest_polling_place[census_tracts_percentage$percent_black > 0.5],
        census_tracts_percentage$nearest_polling_place[census_tracts_percentage$percent_black < 0.5])
 ```
@@ -179,6 +172,7 @@ t.test(census_tracts_percentage$nearest_polling_place[census_tracts_percentage$p
 # Run the same analysis with the decennial census and blocks:
 
 ```{r}
+#get census blocks
 census_blocks <- get_decennial(year = 2020, 
                         state = "SC", 
                         geography = "block", 
@@ -189,6 +183,7 @@ census_blocks <- get_decennial(year = 2020,
 ```
 
 ```{r}
+#find centroids
 census_blocks = census_blocks %>% mutate(centroid = st_centroid(geometry))
 ```
 
@@ -228,12 +223,14 @@ save(census_blocks,file="census_blocks.Rda")
 
 
 ```{r}
+#get percentage black
 census_block_percentage = census_blocks[as.numeric(census_blocks$density) > 0,] %>% 
   mutate(percent_black = value/summary_value)
 ```
 
 
 ```{r}
+#various t-tests
 t.test(census_block_percentage$nearest_polling_place[census_block_percentage$percent_black > 0.5],
        census_block_percentage$nearest_polling_place[census_block_percentage$percent_black < 0.5])
 
@@ -246,7 +243,6 @@ t.test(census_block_percentage$five_nearest_polling_places[as.numeric(census_tra
 
 ```{r}
 #conduct tests by density decile
-
 density_deciles = quantile(as.numeric(census_block_percentage$density), probs = seq(0, 1, by = 0.1))
 
 results_nearest = setNames(data.frame(matrix(ncol = 8, nrow = 10)), c("decile", 
@@ -314,10 +310,6 @@ for (i in 1:10) {
   results_five_nearest[i,8] = p.value_five_nearest
 }
 
-results_nearest
-
-results_five_nearest
-
 saveRDS(results_nearest,file="results_nearest.Rda")
 
 pander::pander(results_nearest)
@@ -330,16 +322,14 @@ cor(census_block_percentage_cor$density, census_block_percentage_cor$percent_bla
 ```
 
 ```{r}
-ggplot() + geom_histogram(aes(as.numeric(census_block_percentage$percent_black)))
-```
-
-```{r}
+#compare distances for majority black and non-black blocks by density
 ggplot() + 
   geom_point(aes(as.factor(seq(0, 0.9, by = 0.1)), results_nearest$mean_majority_black), colour = "blue") +
   geom_point(aes(as.factor(seq(0, 0.9, by = 0.1)), results_nearest$mean_non_majority_black), colour = "red")
 ```
 
 ```{r}
+#visualize how polling place distance corresponds with density, black population percentage, and total black population
 ggplot() +
   geom_count(colour = "#FF8B94", 
              aes(x = as.factor(seq(0, 0.9, by = 0.1)),
@@ -352,8 +342,7 @@ ggplot() +
   ggtitle("Proportional Difference in Polling Place Distance across Block Density Levels") +
   labs(x = "Density Decile", 
        y = "Proportional Difference in Polling Place Distance") +
-  theme_minimal() +
-  theme(text=element_text(family="Times"))
+  theme_minimal()
 
 ggsave("prop_difference.png", height = 4, width = 7)
 ```
@@ -362,6 +351,7 @@ ggsave("prop_difference.png", height = 4, width = 7)
 
 
 ```{r}
+#normalize the data
 data_scaled = census_block_percentage %>% 
   as.data.frame() %>%
   dplyr::select(value, 
@@ -374,11 +364,13 @@ data_scaled = census_block_percentage %>%
 
 data_scaled = as.data.frame(data_scaled)
 
+#simple model for scaled data
 model1 = lm(data_scaled$nearest_polling_place ~
               data_scaled$percent_black+
               data_scaled$density+
               data_scaled$value)
 
+#simple model for unscaled data
 model2 = lm(census_block_percentage$nearest_polling_place ~
               data_scaled$percent_black+
               data_scaled$density+
@@ -390,11 +382,8 @@ summary(model2)
 ```
 
 ```{r}
-plot = ggplot() + geom_sf(data = census_block_percentage$geometry, colour = census_block_percentage$percent_black, size = 0.1)
-plot + theme_minimal()
-```
+#map and compare between percentage black and distance to polling places, split out by density
 
-```{r}
 density_deciles = quantile(as.numeric(census_block_percentage$density), probs = seq(0, 1, by = 0.2))
 
 for (i in 1:5) {
@@ -436,8 +425,5 @@ for (i in 1:5) {
   
   ggsave(paste(Names[i], " Distance Diff.png"))
 }
-
-
-ggplot() + geom_sf(data = decile$geometry, aes(colour = decile$percent_black), size = 0.1) + scale_color_distiller(palette = "Spectral") + theme_minimal()
 ```
 
