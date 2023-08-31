@@ -1,0 +1,27 @@
+---
+title: "Pretty"
+author: "Paul Dingus"
+date: "12/2/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(pander)
+```
+
+## R Markdown
+
+
+```{r cars}
+results = readRDS("results_nearest.Rda")
+
+results
+
+
+
+pander(results)
+```
+
+
